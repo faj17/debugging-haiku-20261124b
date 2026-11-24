@@ -3,7 +3,13 @@
 The whole entry is seventeen syllables about a midnight log line and
 the stack trace that points the finger back at the author. The script
 validates the shape (three lines, 5-7-5 syllables, 1-200 characters
-total) and drops the haiku into /output/entry.txt.
+total, no control characters, no leading/trailing whitespace on any
+line) and drops the haiku into /output/entry.txt, then re-reads the
+file and checks the written bytes match the haiku exactly.
+
+Revision pass: validate() now also rejects control characters and
+stray whitespace per line, and main() does a round-trip check that
+the file on disk equals the validated haiku.
 """
 
 from pathlib import Path
@@ -58,9 +64,14 @@ def validate(text: str) -> str:
         raise ValueError(
             f"haiku must be {MIN_CHARS}-{MAX_CHARS} chars, got {len(haiku)}"
         )
+    if any(ord(ch) < 32 and ch != "\n" for ch in haiku):
+        raise ValueError("haiku must not contain control characters")
     lines = haiku.split("\n")
     if len(lines) != 3:
         raise ValueError(f"haiku must be exactly 3 lines, got {len(lines)}")
+    for i, line in enumerate(lines, 1):
+        if line != line.strip():
+            raise ValueError(f"line {i} has leading/trailing whitespace")
     counts = tuple(line_syllables(line) for line in lines)
     if counts != EXPECTED_SYLLABLES:
         raise ValueError(
@@ -73,6 +84,10 @@ def main() -> None:
     text = validate(HAIKU)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_FILE.write_text(text, encoding="utf-8")
+    # Round-trip check: what landed on disk must equal the haiku exactly.
+    written = OUTPUT_FILE.read_text(encoding="utf-8")
+    if written != text:
+        raise ValueError("round-trip check failed: entry.txt != haiku")
     counts = [line_syllables(line) for line in text.split("\n")]
     print(text)
     print(f"syllables per line: {counts} (total {sum(counts)})")
